@@ -117,7 +117,7 @@ public class KStreamTestDriver {
 
         // if currNode is null, check if this topic is a changelog topic;
         // if yes, skip
-        if (topicName.endsWith(ProcessorStateManager.STATE_CHANGELOG_TOPIC_SUFFIX)) {
+        if (topicName.endsWith(ProcessorStateManager.DEFAULT_STATE_CHANGELOG_TOPIC_SUFFIX)) {
             return;
         }
         context.setRecordContext(createRecordContext(context.timestamp()));

@@ -48,8 +48,24 @@ public class ProcessorStateManager implements StateManager {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessorStateManager.class);
 
-    public static final String STATE_CHANGELOG_TOPIC_SUFFIX = "-changelog";
-    public static final String CHECKPOINT_FILE_NAME = ".checkpoint";
+    public static final String DEFAULT_STATE_CHANGELOG_TOPIC_SUFFIX = "-changelog";
+    static final String CHECKPOINT_FILE_NAME = ".checkpoint";
+
+    static private String changeLogTopicPrefix = null;
+    static private String changeLogTopicSuffix = null;
+
+    public static void setCustomTopicName(final String prefix, final String suffix) {
+        if (null == prefix || null == suffix) {
+            throw new IllegalArgumentException("Custom topic name can not contain 'null'");
+        }
+
+        if (null != changeLogTopicPrefix || null != changeLogTopicSuffix) {
+            throw new IllegalArgumentException(String.format("Custom topic name already configured: %s, %s", changeLogTopicPrefix, changeLogTopicSuffix));
+        }
+
+        changeLogTopicPrefix = prefix;
+        changeLogTopicSuffix = suffix;
+    }
 
     private final File baseDir;
     private final TaskId taskId;
@@ -118,9 +134,12 @@ public class ProcessorStateManager implements StateManager {
         checkpoint.delete();
     }
 
+    public static String storeChangelogTopic(final String applicationId, final String storeName) {
+        if (null != changeLogTopicPrefix && null != changeLogTopicSuffix) {
+            return changeLogTopicPrefix + "." + storeName + "." + changeLogTopicSuffix;
+        }
 
-    public static String storeChangelogTopic(String applicationId, String storeName) {
-        return applicationId + "-" + storeName + STATE_CHANGELOG_TOPIC_SUFFIX;
+        return applicationId + "-" + storeName + DEFAULT_STATE_CHANGELOG_TOPIC_SUFFIX;
     }
 
     public File baseDir() {
