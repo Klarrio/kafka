@@ -79,9 +79,9 @@ ext {
   skipSigning = project.hasProperty('skipSigning') && skipSigning.toBoolean()
   shouldSign = !skipSigning && !version.endsWith("SNAPSHOT") && project.gradle.startParameter.taskNames.any { it.contains("upload") }
 
-  //mavenUrl = project.hasProperty('mavenUrl') ? project.mavenUrl : ''
-  //mavenUsername = project.hasProperty('mavenUsername') ? project.mavenUsername : ''
-  //mavenPassword = project.hasProperty('mavenPassword') ? project.mavenPassword : ''
+  mavenUrl = project.hasProperty('mavenUrl') ? project.mavenUrl : ''
+  mavenUsername = project.hasProperty('mavenUsername') ? project.mavenUsername : ''
+  mavenPassword = project.hasProperty('mavenPassword') ? project.mavenPassword : ''
 
   userShowStandardStreams = project.hasProperty("showStandardStreams") ? showStandardStreams : null
 
@@ -131,14 +131,14 @@ subprojects {
   uploadArchives {
     repositories {
       signing {
-          // required { shouldSign }
-          // sign configurations.archives
+          required { shouldSign }
+          sign configurations.archives
 
           // To test locally, replace mavenUrl in ~/.gradle/gradle.properties to file://localhost/tmp/myRepo/
           mavenDeployer {
-              // beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-              repository(url: "${artifactory_url}") {
-                  authentication(userName: "${artifactory_user}", password: "${artifactory_password}")
+              beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+              repository(url: "${mavenUrl}") {
+                authentication(userName: "${mavenUsername}", password: "${mavenPassword}")
               }
               afterEvaluate {
                   pom.artifactId = "${archivesBaseName}"
