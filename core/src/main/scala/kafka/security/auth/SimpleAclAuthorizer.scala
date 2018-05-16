@@ -18,20 +18,21 @@ package kafka.security.auth
 
 import java.util
 import java.util.concurrent.locks.ReentrantReadWriteLock
-import kafka.common.{NotificationHandler, ZkNodeChangeNotificationListener}
 
+import kafka.common.{NotificationHandler, ZkNodeChangeNotificationListener}
 import kafka.network.RequestChannel.Session
 import kafka.security.auth.SimpleAclAuthorizer.VersionedAcls
 import kafka.server.KafkaConfig
 import kafka.utils.CoreUtils.{inReadLock, inWriteLock}
 import kafka.utils._
-import org.I0Itec.zkclient.exception.{ZkNodeExistsException, ZkNoNodeException}
+import org.I0Itec.zkclient.exception.{ZkNoNodeException, ZkNodeExistsException}
 import org.apache.kafka.common.security.JaasUtils
 import org.apache.kafka.common.security.auth.KafkaPrincipal
+
 import scala.collection.JavaConverters._
 import org.apache.log4j.Logger
 
-import scala.util.Random
+import scala.util.{Failure, Random, Success}
 
 object SimpleAclAuthorizer {
   //optional override zookeeper cluster configuration where acls will be stored, if not specified acls will be stored in
@@ -230,12 +231,17 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
     inWriteLock(lock) {
       val resourceTypes = zkUtils.getChildren(SimpleAclAuthorizer.AclZkPath)
       for (rType <- resourceTypes) {
-        val resourceType = ResourceType.fromString(rType)
-        val resourceTypePath = SimpleAclAuthorizer.AclZkPath + "/" + resourceType.name
-        val resourceNames = zkUtils.getChildren(resourceTypePath)
-        for (resourceName <- resourceNames) {
-          val versionedAcls = getAclsFromZk(Resource(resourceType, resourceName.toString))
-          updateCache(new Resource(resourceType, resourceName), versionedAcls)
+        ResourceType.fromString(rType) match {
+          case Success(resourceType) =>
+            val resourceTypePath = SimpleAclAuthorizer.AclZkPath + "/" + resourceType.name
+            val resourceNames = zkUtils.getChildren(resourceTypePath)
+            for (resourceName <- resourceNames) {
+              val versionedAcls = getAclsFromZk(Resource(resourceType, resourceName.toString))
+              updateCache(new Resource(resourceType, resourceName), versionedAcls)
+            }
+
+          case Failure(e) =>
+            authorizerLogger.warn(e.getMessage)
         }
       }
     }
@@ -356,10 +362,11 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
 
   object AclChangedNotificationHandler extends NotificationHandler {
     override def processNotification(notificationMessage: String) {
-      val resource: Resource = Resource.fromString(notificationMessage)
-      inWriteLock(lock) {
-        val versionedAcls = getAclsFromZk(resource)
-        updateCache(resource, versionedAcls)
+      Resource.fromString(notificationMessage).map { resource =>
+        inWriteLock(lock) {
+          val versionedAcls = getAclsFromZk(resource)
+          updateCache(resource, versionedAcls)
+        }
       }
     }
   }

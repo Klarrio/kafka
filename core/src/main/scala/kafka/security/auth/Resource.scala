@@ -16,15 +16,17 @@
  */
 package kafka.security.auth
 
+import scala.util.Try
+
 object Resource {
   val Separator = ":"
   val ClusterResourceName = "kafka-cluster"
   val ClusterResource = new Resource(Cluster, Resource.ClusterResourceName)
   val WildCardResource = "*"
 
-  def fromString(str: String): Resource = {
+  def fromString(str: String): Try[Resource] = Try {
     str.split(Separator, 2) match {
-      case Array(resourceType, name, _*) => new Resource(ResourceType.fromString(resourceType), name)
+      case Array(resourceType, name, _*) => new Resource(ResourceType.fromString(resourceType).get, name)
       case _ => throw new IllegalArgumentException("expected a string in format ResourceType:ResourceName but got " + str)
     }
   }
