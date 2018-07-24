@@ -19,6 +19,8 @@ package kafka.security.auth
 import kafka.common.{BaseEnum, KafkaException}
 import org.apache.kafka.common.protocol.Errors
 
+import scala.util.Try
+
 /**
  * ResourceTypes.
  */
@@ -44,7 +46,7 @@ case object Group extends ResourceType {
 
 object ResourceType {
 
-  def fromString(resourceType: String): ResourceType = {
+  def fromString(resourceType: String): Try[ResourceType] = Try {
     val rType = values.find(rType => rType.name.equalsIgnoreCase(resourceType))
     rType.getOrElse(throw new KafkaException(resourceType + " not a valid resourceType name. The valid names are " + values.mkString(",")))
   }

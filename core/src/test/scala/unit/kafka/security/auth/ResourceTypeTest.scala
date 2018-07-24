@@ -25,14 +25,9 @@ class ResourceTypeTest extends JUnitSuite {
   @Test
   def testFromString(): Unit = {
     val resourceType = ResourceType.fromString("Topic")
-    Assert.assertEquals(Topic, resourceType)
+    Assert.assertEquals(Topic, resourceType.get)
 
-    try {
-      ResourceType.fromString("badName")
-      fail("Expected exception on invalid ResourceType name.")
-    } catch {
-      case _: KafkaException => // expected
-    }
+    Assert.assertTrue(ResourceType.fromString("badName").isFailure)
   }
 
 }
