@@ -20,7 +20,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.streams.processor.StreamPartitioner;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public interface RecordCollector {
     <K, V> void send(final String topic,
@@ -39,6 +41,23 @@ public interface RecordCollector {
                      Serializer<K> keySerializer,
                      Serializer<V> valueSerializer,
                      StreamPartitioner<? super K, ? super V> partitioner);
+
+    <K, V> void broadcast(final String topic,
+                          K key,
+                          V value,
+                          Long timestamp,
+                          Serializer<K> keySerializer,
+                          Serializer<V> valueSerializer);
+
+    <K, V> void broadcast(final String topic,
+                          K key,
+                          V value,
+                          Set<Integer> partitions,
+                          Long timestamp,
+                          Serializer<K> keySerializer,
+                          Serializer<V> valueSerializer);
+
+    List<Integer> partitionSetForTopic(String topic);
 
     void flush();
 
