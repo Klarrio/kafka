@@ -38,7 +38,7 @@ import java.util.Map;
 
 
 public class ProcessorStateManager extends AbstractStateManager {
-    private static final String STATE_CHANGELOG_TOPIC_SUFFIX = "-changelog";
+    private static final String DEFAULT_STATE_CHANGELOG_TOPIC_SUFFIX = "-changelog";
 
     private final Logger log;
     private final TaskId taskId;
@@ -54,6 +54,22 @@ public class ProcessorStateManager extends AbstractStateManager {
     // TODO: this map does not work with customized grouper where multiple partitions
     // of the same topic can be assigned to the same topic.
     private final Map<String, TopicPartition> partitionForTopic;
+
+    static private String changeLogTopicPrefix = null;
+    static private String changeLogTopicSuffix = null;
+
+    public static void setCustomTopicName(final String prefix, final String suffix) {
+        if (null == prefix || null == suffix) {
+            throw new IllegalArgumentException("Custom topic name can not contain 'null'");
+        }
+
+        if (null != changeLogTopicPrefix || null != changeLogTopicSuffix) {
+            throw new IllegalArgumentException(String.format("Custom topic name already configured: %s, %s", changeLogTopicPrefix, changeLogTopicSuffix));
+        }
+
+        changeLogTopicPrefix = prefix;
+        changeLogTopicSuffix = suffix;
+    }
 
     /**
      * @throws ProcessorStateException if the task directory does not exist and could not be created
@@ -97,7 +113,11 @@ public class ProcessorStateManager extends AbstractStateManager {
 
 
     public static String storeChangelogTopic(final String applicationId, final String storeName) {
-        return applicationId + "-" + storeName + STATE_CHANGELOG_TOPIC_SUFFIX;
+        if (null != changeLogTopicPrefix && null != changeLogTopicSuffix) {
+            return changeLogTopicPrefix + "." + storeName + "." + changeLogTopicSuffix;
+        }
+
+        return applicationId + "-" + storeName + DEFAULT_STATE_CHANGELOG_TOPIC_SUFFIX;
     }
 
     @Override
