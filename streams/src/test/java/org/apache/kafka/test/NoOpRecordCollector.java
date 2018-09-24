@@ -22,7 +22,9 @@ import org.apache.kafka.streams.processor.StreamPartitioner;
 import org.apache.kafka.streams.processor.internals.RecordCollector;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class NoOpRecordCollector implements RecordCollector {
 
@@ -43,6 +45,17 @@ public class NoOpRecordCollector implements RecordCollector {
                             final Serializer<K> keySerializer,
                             final Serializer<V> valueSerializer,
                             final StreamPartitioner<? super K, ? super V> partitioner) {}
+
+    @Override
+    public <K, V> void broadcast(String topic, K key, V value, Long timestamp, Serializer<K> keySerializer, Serializer<V> valueSerializer) {}
+
+    @Override
+    public <K, V> void broadcast(String topic, K key, V value, Set<Integer> partitions, Long timestamp, Serializer<K> keySerializer, Serializer<V> valueSerializer) {}
+
+    @Override
+    public List<Integer> partitionSetForTopic(String topic) {
+        return Collections.emptyList();
+    }
 
     @Override
     public void flush() {}

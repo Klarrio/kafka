@@ -41,9 +41,11 @@ import org.apache.kafka.streams.errors.StreamsException;
 import org.apache.kafka.streams.processor.StreamPartitioner;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class RecordCollectorImpl implements RecordCollector {
     private final Logger log;
@@ -72,6 +74,13 @@ public class RecordCollectorImpl implements RecordCollector {
     }
 
     @Override
+    public List<Integer> partitionSetForTopic(String topic) {
+        List<Integer> result = new ArrayList<>();
+        for (PartitionInfo pi : this.producer.partitionsFor(topic)) result.add(pi.partition());
+        return result;
+    }
+
+    @Override
     public <K, V> void send(final String topic,
                             final K key,
                             final V value,
@@ -80,6 +89,9 @@ public class RecordCollectorImpl implements RecordCollector {
                             final Serializer<V> valueSerializer,
                             final StreamPartitioner<? super K, ? super V> partitioner) {
         Integer partition = null;
+
+        final byte[] keyBytes = keySerializer.serialize(topic, key);
+        final byte[] valBytes = valueSerializer.serialize(topic, value);
 
         if (partitioner != null) {
             final List<PartitionInfo> partitions = producer.partitionsFor(topic);
@@ -91,7 +103,7 @@ public class RecordCollectorImpl implements RecordCollector {
             }
         }
 
-        send(topic, key, value, partition, timestamp, keySerializer, valueSerializer);
+        localSend(key, value, new ProducerRecord<>(topic, partition, timestamp, keyBytes, valBytes));
     }
 
     private boolean productionExceptionIsFatal(final Exception exception) {
@@ -134,6 +146,36 @@ public class RecordCollectorImpl implements RecordCollector {
             exception);
     }
 
+
+    @Override
+    public <K, V> void broadcast(final String topic,
+                                 K key,
+                                 V value,
+                                 Long timestamp,
+                                 Serializer<K> keySerializer,
+                                 Serializer<V> valueSerializer) {
+
+        final byte[] keyBytes = keySerializer.serialize(topic, key);
+        final byte[] valBytes = valueSerializer.serialize(topic, value);
+
+        for (Integer partition : partitionSetForTopic(topic))  localSend(key, value, new ProducerRecord<byte[], byte[]>(topic, partition, timestamp, keyBytes, valBytes));
+    }
+
+    @Override
+    public <K, V> void broadcast(final String topic,
+                                 final K key,
+                                 final V value,
+                                 final Set<Integer> partitions,
+                                 final Long timestamp,
+                                 final Serializer<K> keySerializer,
+                                 final Serializer<V> valueSerializer) {
+
+        final byte[] keyBytes = keySerializer.serialize(topic, key);
+        final byte[] valBytes = valueSerializer.serialize(topic, value);
+
+        for (Integer partition : partitions)  localSend(key, value, new ProducerRecord<byte[], byte[]>(topic, partition, timestamp, keyBytes, valBytes));
+    }
+
     @Override
     public <K, V> void  send(final String topic,
                              final K key,
@@ -142,12 +184,20 @@ public class RecordCollectorImpl implements RecordCollector {
                              final Long timestamp,
                              final Serializer<K> keySerializer,
                              final Serializer<V> valueSerializer) {
-        checkForException();
+
         final byte[] keyBytes = keySerializer.serialize(topic, key);
         final byte[] valBytes = valueSerializer.serialize(topic, value);
 
-        final ProducerRecord<byte[], byte[]> serializedRecord =
-                new ProducerRecord<>(topic, partition, timestamp, keyBytes, valBytes);
+        localSend(key, value, new ProducerRecord<>(topic, partition, timestamp, keyBytes, valBytes));
+    }
+
+    private <K, V> void localSend(final K key,
+                                  final V value,
+                                  final ProducerRecord<byte[], byte[]> serializedRecord) {
+
+        checkForException();
+        final String topic = serializedRecord.topic();
+        final Long timestamp = serializedRecord.timestamp();
 
         try {
             producer.send(serializedRecord, new Callback() {

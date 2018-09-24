@@ -30,7 +30,9 @@ import org.apache.kafka.streams.processor.TaskId;
 import org.apache.kafka.streams.state.internals.ThreadCache;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 class StandbyContextImpl extends AbstractProcessorContext implements RecordCollector.Supplier {
 
@@ -53,6 +55,17 @@ class StandbyContextImpl extends AbstractProcessorContext implements RecordColle
                                 final Serializer<K> keySerializer,
                                 final Serializer<V> valueSerializer,
                                 final StreamPartitioner<? super K, ? super V> partitioner) {}
+
+        @Override
+        public <K, V> void broadcast(String topic, K key, V value, Long timestamp, Serializer<K> keySerializer, Serializer<V> valueSerializer) {}
+
+        @Override
+        public <K, V> void broadcast(String topic, K key, V value, Set<Integer> partitions, Long timestamp, Serializer<K> keySerializer, Serializer<V> valueSerializer) {}
+
+        @Override
+        public List<Integer> partitionSetForTopic(String topic) {
+            return Collections.emptyList();
+        }
 
         @Override
         public void flush() {}
