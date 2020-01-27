@@ -181,6 +181,34 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
   }
 
   @Test
+  def testPrefixAcls(): Unit = {
+    assertFalse("when acls = [],  authorizer should fail close.", simpleAclAuthorizer.authorize(session, Read, resource))
+
+    val user1 = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, username)
+    val host1 = InetAddress.getByName("192.168.3.1")
+    val readAcl = new Acl(user1, Allow, host1.getHostAddress, Read)
+    val prefixResource = new Resource(Group, "foo*")
+    val actualResource = new Resource(Group, "foo.actual")
+
+    val acls = changeAclAndVerify(Set.empty[Acl], Set[Acl](readAcl), Set.empty[Acl], prefixResource)
+
+    val host1Session = Session(user1, host1)
+
+    assertTrue("User1 should have Read access from host1", simpleAclAuthorizer.authorize(host1Session, Read, actualResource))
+
+//    //allow Write to specific topic.
+//    val writeAcl = new Acl(user1, Allow, host1.getHostAddress, Write)
+//    changeAclAndVerify(Set.empty[Acl], Set[Acl](writeAcl), Set.empty[Acl])
+//
+//    //deny Write to wild card topic.
+//    val denyWriteOnWildCardResourceAcl = new Acl(user1, Deny, host1.getHostAddress, Write)
+//    changeAclAndVerify(acls, Set[Acl](denyWriteOnWildCardResourceAcl), Set.empty[Acl], wildCardResource)
+//
+//    assertFalse("User1 should not have Write access from host1", simpleAclAuthorizer.authorize(host1Session, Write, resource))
+  }
+
+
+  @Test
   def testNoAclFound() {
     assertFalse("when acls = [],  authorizer should fail close.", simpleAclAuthorizer.authorize(session, Read, resource))
   }
