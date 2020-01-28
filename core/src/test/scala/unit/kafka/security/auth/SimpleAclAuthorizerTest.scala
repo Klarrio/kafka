@@ -29,6 +29,8 @@ import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.junit.Assert._
 import org.junit.{After, Before, Test}
 
+import scala.collection.immutable
+
 class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
 
   val simpleAclAuthorizer = new SimpleAclAuthorizer
@@ -187,26 +189,51 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     val user1 = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, username)
     val host1 = InetAddress.getByName("192.168.3.1")
     val readAcl = new Acl(user1, Allow, host1.getHostAddress, Read)
-    val prefixResource = new Resource(Group, "foo*")
-    val actualResource = new Resource(Group, "foo.actual")
+    val prefixResource = new Resource(Group, "foo.*")
+    val actualResources = Set(
+      new Resource(Group, "foo."),
+      new Resource(Group, "foo.actual"),
+      new Resource(Group, "foo.actual.blah")
+    )
+
+    val unallowedResources = Set(
+      new Resource(Group, "foo"),
+      new Resource(Group, "fo.o"),
+      new Resource(Group, "fo.o.actual"),
+      new Resource(Group, "foo_actual"),
+      new Resource(Group, "*"),
+      new Resource(Topic, "foo.actual"),
+      new Resource(Topic, "*")
+    )
 
     val acls = changeAclAndVerify(Set.empty[Acl], Set[Acl](readAcl), Set.empty[Acl], prefixResource)
 
     val host1Session = Session(user1, host1)
 
-    assertTrue("User1 should have Read access from host1", simpleAclAuthorizer.authorize(host1Session, Read, actualResource))
+    actualResources.foreach(r => assertTrue(s"User1 should have Read access to ${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Read, r)))
 
-//    //allow Write to specific topic.
-//    val writeAcl = new Acl(user1, Allow, host1.getHostAddress, Write)
-//    changeAclAndVerify(Set.empty[Acl], Set[Acl](writeAcl), Set.empty[Acl])
-//
-//    //deny Write to wild card topic.
-//    val denyWriteOnWildCardResourceAcl = new Acl(user1, Deny, host1.getHostAddress, Write)
-//    changeAclAndVerify(acls, Set[Acl](denyWriteOnWildCardResourceAcl), Set.empty[Acl], wildCardResource)
-//
-//    assertFalse("User1 should not have Write access from host1", simpleAclAuthorizer.authorize(host1Session, Write, resource))
+    unallowedResources.foreach(r => assertFalse(s"User1 should not have Read access to ${r.resourceType}:${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Read, r)))
+
+    //allow Write to prefix group.
+    val writeAcl = new Acl(user1, Allow, host1.getHostAddress, Write)
+    changeAclAndVerify(Set[Acl](readAcl), Set[Acl](writeAcl), Set.empty[Acl], prefixResource)
+    actualResources.foreach(r => assertTrue(s"User1 should have Write access to ${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Write, r)))
+    unallowedResources.foreach(r => assertFalse(s"User1 should not have Write access to ${r.resourceType}:${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Write, r)))
+
+    //deny Write to one actual group.
+    val denyWriteAcl = new Acl(user1, Deny, host1.getHostAddress, Write)
+    val actualResource = new Resource(Group, "foo.actual")
+    changeAclAndVerify(Set[Acl](readAcl, writeAcl), Set[Acl](denyWriteAcl), Set.empty[Acl], actualResource)
+
+    assertFalse(s"User1 should not have Write access to ${actualResource.name} from host1", simpleAclAuthorizer.authorize(host1Session, Write, actualResource))
+    (actualResources - actualResource).foreach(r => assertTrue(s"User1 should have Write access to ${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Write, r)))
+
+    //deny Write to wild card topic.
+    val wildCardResource = new Resource(Group, Resource.WildCardResource)
+    changeAclAndVerify(Set.empty[Acl], Set[Acl](denyWriteAcl), Set.empty[Acl], wildCardResource)
+
+    actualResources.foreach(r => assertFalse(s"User1 should not have Write access to ${r.name} from host1", simpleAclAuthorizer.authorize(host1Session, Write, r)))
   }
-
 
   @Test
   def testNoAclFound() {
@@ -223,7 +250,8 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     try {
       testAuthorizer.configure(cfg.originals)
       assertTrue("when acls = null or [],  authorizer should fail open with allow.everyone = true.", testAuthorizer.authorize(session, Read, resource))
-    } finally {
+    }
+    finally {
       testAuthorizer.close()
     }
   }
@@ -294,7 +322,8 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
 
       assertEquals(acls, authorizer.getAcls(resource))
       assertEquals(acls1, authorizer.getAcls(resource1))
-    } finally {
+    }
+    finally {
       authorizer.close()
     }
   }
@@ -327,7 +356,8 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
       future.get(10, TimeUnit.SECONDS)
 
       assertEquals(acls, simpleAclAuthorizer3.getAcls(resource))
-    } finally {
+    }
+    finally {
       simpleAclAuthorizer3.close()
       executor.shutdownNow()
     }
@@ -389,18 +419,18 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     }
 
     // Alternate authorizer, Remove all acls that end in 0
-    val concurrentFuctions = acls.map { acl =>
-      () => {
-        val aclId = acl.principal.getName.toInt
-        if (aclId % 2 == 0) {
-          simpleAclAuthorizer.addAcls(Set(acl), commonResource)
-        } else {
-          simpleAclAuthorizer2.addAcls(Set(acl), commonResource)
-        }
-        if (aclId % 10 == 0) {
-          simpleAclAuthorizer2.removeAcls(Set(acl), commonResource)
-        }
+    val concurrentFuctions = acls.map { acl => () => {
+      val aclId = acl.principal.getName.toInt
+      if (aclId % 2 == 0) {
+        simpleAclAuthorizer.addAcls(Set(acl), commonResource)
       }
+      else {
+        simpleAclAuthorizer2.addAcls(Set(acl), commonResource)
+      }
+      if (aclId % 10 == 0) {
+        simpleAclAuthorizer2.removeAcls(Set(acl), commonResource)
+      }
+    }
     }
 
     val expectedAcls = acls.filter { acl =>
@@ -415,8 +445,8 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
   }
 
   /**
-    * Test ACL inheritance, as described in #{org.apache.kafka.common.acl.AclOperation}
-    */
+   * Test ACL inheritance, as described in #{org.apache.kafka.common.acl.AclOperation}
+   */
   @Test
   def testAclInheritance(): Unit = {
     testImplicationsOfAllow(All, Set(Read, Write, Create, Delete, Alter, Describe,
@@ -469,11 +499,10 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     val acl = new Acl(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, username), Allow, WildCardHost, All)
 
     // Alternate authorizer to keep adding and removing ZooKeeper path
-    val concurrentFuctions = (0 to 50).map { _ =>
-      () => {
-        simpleAclAuthorizer.addAcls(Set(acl), resource)
-        simpleAclAuthorizer2.removeAcls(Set(acl), resource)
-      }
+    val concurrentFuctions = (0 to 50).map { _ => () => {
+      simpleAclAuthorizer.addAcls(Set(acl), resource)
+      simpleAclAuthorizer2.removeAcls(Set(acl), resource)
+    }
     }
 
     TestUtils.assertConcurrent("Should support many concurrent calls", concurrentFuctions, 30 * 1000)
@@ -482,17 +511,91 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     TestUtils.waitAndVerifyAcls(Set.empty[Acl], simpleAclAuthorizer2, resource)
   }
 
+  @Test
+  def testAuthorizerPerformance(): Unit = {
+    /*
+      n tenants
+      m apps per tenant
+      => n*m principals
+
+      each principal has
+        - access to i topics (literal)
+        - access to j shared topics (literal)
+        - access to its tenants wildcard group
+
+     */
+    val tenantCount = 20
+    val appsCount = 10
+    val topicCount = 5
+    val sharedTopicCount = 30
+
+    val host1 = InetAddress.getByName("192.168.3.1")
+    val tenants = Range(1, tenantCount).map(i => f"tenant$i%02d").toSet
+    val principals = tenants.map(t => t->Range(1, appsCount).map(i => new KafkaPrincipal(KafkaPrincipal.USER_TYPE, f"${t}_app$i%02d")).toSet).toMap
+    // Step 1: resources unique per principal
+    principals.values.flatten.foreach { p =>
+      val readAcl = new Acl(p, Allow, host1.getHostAddress, Read)
+      val topics = Range(1, topicCount).map(i => new Resource(Topic, f"topic.${p.getName}.$i%02d")).toSet
+      topics.foreach(t => changeAclAndVerify(Set.empty[Acl], Set[Acl](readAcl), Set.empty[Acl], t))
+    }
+    // Step 2: shared resources
+    Range(1, sharedTopicCount)
+      .map(i=>f"topic.shared.$i%02d")
+      .map(new Resource(Topic,_))
+      .foreach { r =>
+        val acls = principals.values.flatten.map(new Acl(_, Allow, host1.getHostAddress, Read)).toSet
+        changeAclAndVerify(Set.empty[Acl], acls, Set.empty[Acl], r)
+      }
+
+    // Step 3: wildcard groups per tenant
+    principals.foreach { case (t, pl) =>
+      val acls = pl.map(new Acl(_, Allow, host1.getHostAddress, Read))
+      val r = new Resource(Group, s"prefix.$t.*")
+      changeAclAndVerify(Set.empty[Acl], acls, Set.empty[Acl], r)
+    }
+
+    // run timed test
+    val startMs = System.currentTimeMillis
+
+    Range(1,100).foreach { _ =>
+      principals.values.flatten.foreach { p =>
+        val session = Session(p, host1)
+        // check unique topics
+        val topics = Range(1, topicCount).map(i => new Resource(Topic, f"topic.${p.getName}.$i%02d")).toSet
+        topics.foreach(t => assertTrue(s"${p.getName} should have Read access to ${t.name} from host1", simpleAclAuthorizer.authorize(session, Read, t)))
+
+        // check shared topics
+        Range(1, sharedTopicCount)
+          .map(i => f"topic.shared.$i%02d")
+          .map(new Resource(Topic, _))
+          .foreach(t => assertTrue(s"${p.getName} should have Read access to ${t.name} from host1", simpleAclAuthorizer.authorize(session, Read, t)))
+      }
+
+//      principals.foreach { case (t, pl) =>
+//        pl.foreach { p =>
+//          val session = Session(p, host1)
+//          val g = new Resource(Group, s"prefix.$t.${TestUtils.randomString(10)}")
+//          assertTrue(s"${p.getName} should have Read access to ${g.name} from host1", simpleAclAuthorizer.authorize(session, Read, g))
+//        }
+//      }
+    }
+
+    val stopMs = System.currentTimeMillis
+
+    logger.error(s"It took ${stopMs - startMs} ms")
+  }
+
   private def changeAclAndVerify(originalAcls: Set[Acl], addedAcls: Set[Acl], removedAcls: Set[Acl], resource: Resource = resource): Set[Acl] = {
     var acls = originalAcls
 
-    if(addedAcls.nonEmpty) {
+    if (addedAcls.nonEmpty) {
       simpleAclAuthorizer.addAcls(addedAcls, resource)
       acls ++= addedAcls
     }
 
-    if(removedAcls.nonEmpty) {
+    if (removedAcls.nonEmpty) {
       simpleAclAuthorizer.removeAcls(removedAcls, resource)
-      acls --=removedAcls
+      acls --= removedAcls
     }
 
     TestUtils.waitAndVerifyAcls(acls, simpleAclAuthorizer, resource)
