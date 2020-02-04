@@ -6,9 +6,6 @@
    mavenUrl=https://klarrio.jfrog.io/klarrio/jvm-libs-local
    mavenUsername=<your jfrog username>
    mavenPassword=<your jfrog password, typically stored in ~/.ivy2/.klarrio-credentials>
-   signing.keyId=
-   signing.password=
-   signing.secretKeyRingFile=
   ```          
 * follow the [README](README.md) to set up gradle
 * run the command `./gradlew uploadArchivesAll` to build and publish the Kafka libraries.
