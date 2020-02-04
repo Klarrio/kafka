@@ -524,10 +524,12 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
         - access to its tenants wildcard group
 
      */
-    val tenantCount = 20
-    val appsCount = 10
-    val topicCount = 5
-    val sharedTopicCount = 30
+
+    val tenantCount = 25
+    val appsCount = 20
+    val topicCount = 10
+    val sharedTopicCount = 20
+    val repeats = 100
 
     val host1 = InetAddress.getByName("192.168.3.1")
     val tenants = Range(1, tenantCount).map(i => f"tenant$i%02d").toSet
@@ -547,7 +549,7 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
         changeAclAndVerify(Set.empty[Acl], acls, Set.empty[Acl], r)
       }
 
-    // Step 3: wildcard groups per tenant
+     // Step 3: wildcard groups per tenant
     principals.foreach { case (t, pl) =>
       val acls = pl.map(new Acl(_, Allow, host1.getHostAddress, Read))
       val r = new Resource(Group, s"prefix.$t.*")
@@ -557,7 +559,7 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     // run timed test
     val startMs = System.currentTimeMillis
 
-    Range(1,100).foreach { _ =>
+    Range(1,repeats).foreach { _ =>
       principals.values.flatten.foreach { p =>
         val session = Session(p, host1)
         // check unique topics
@@ -571,13 +573,13 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
           .foreach(t => assertTrue(s"${p.getName} should have Read access to ${t.name} from host1", simpleAclAuthorizer.authorize(session, Read, t)))
       }
 
-//      principals.foreach { case (t, pl) =>
-//        pl.foreach { p =>
-//          val session = Session(p, host1)
-//          val g = new Resource(Group, s"prefix.$t.${TestUtils.randomString(10)}")
-//          assertTrue(s"${p.getName} should have Read access to ${g.name} from host1", simpleAclAuthorizer.authorize(session, Read, g))
-//        }
-//      }
+      principals.foreach { case (t, pl) =>
+        pl.foreach { p =>
+          val session = Session(p, host1)
+          val g = new Resource(Group, s"prefix.$t.${TestUtils.randomString(10)}")
+          assertTrue(s"${p.getName} should have Read access to ${g.name} from host1", simpleAclAuthorizer.authorize(session, Read, g))
+        }
+      }
     }
 
     val stopMs = System.currentTimeMillis
