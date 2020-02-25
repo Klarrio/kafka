@@ -58,6 +58,7 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
   private var aclChangeListener: ZkNodeChangeNotificationListener = null
 
   private val aclCache = new scala.collection.mutable.HashMap[Resource, VersionedAcls]
+  private val prefixAclCache = new scala.collection.mutable.HashMap[Resource, VersionedAcls]
   private val lock = new ReentrantReadWriteLock()
 
   // The maximum number of times we should try to update the resource acls in zookeeper before failing;
@@ -113,9 +114,9 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
     // Allowing read, write, delete, or alter implies allowing describe.
     // See #{org.apache.kafka.common.acl.AclOperation} for more details about ACL inheritance.
     val allowOps = operation match {
-      case Describe => Set[Operation](Describe, Read, Write, Delete, Alter)
+      case Describe        => Set[Operation](Describe, Read, Write, Delete, Alter)
       case DescribeConfigs => Set[Operation](DescribeConfigs, AlterConfigs)
-      case _ => Set[Operation](operation)
+      case _               => Set[Operation](operation)
     }
     val allowMatch = allowOps.exists(operation => aclMatch(operation, resource, principal, host, Allow, acls))
 
@@ -133,14 +134,16 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
     if (acls.isEmpty) {
       authorizerLogger.debug(s"No acl found for resource $resource, authorized = $shouldAllowEveryoneIfNoAclIsFound")
       shouldAllowEveryoneIfNoAclIsFound
-    } else false
+    }
+    else false
   }
 
   def isSuperUser(operation: Operation, resource: Resource, principal: KafkaPrincipal, host: String): Boolean = {
     if (superUsers.contains(principal)) {
       authorizerLogger.debug(s"principal = $principal is a super user, allowing operation without checking acls.")
       true
-    } else false
+    }
+    else false
   }
 
   private def aclMatch(operations: Operation, resource: Resource, principal: KafkaPrincipal, host: String, permissionType: PermissionType, acls: Set[Acl]): Boolean = {
@@ -184,16 +187,23 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
 
   override def getAcls(resource: Resource): Set[Acl] = {
     inReadLock(lock) {
-      aclCache.get(resource).map(_.acls).getOrElse(Set.empty[Acl])
+      aclCache.get(resource).map(_.acls).getOrElse(Set.empty[Acl]) ++
+      prefixAclCache.filterKeys(prefix => matchPrefix(resource, prefix))
+        .values.flatMap(_.acls).toSet
     }
+  }
+
+  private def matchPrefix(resource: Resource, prefix: Resource): Boolean = {
+    resource.resourceType == prefix.resourceType && resource.name.startsWith(prefix.name)
   }
 
   override def getAcls(principal: KafkaPrincipal): Map[Resource, Set[Acl]] = {
     inReadLock(lock) {
       aclCache.mapValues { versionedAcls =>
         versionedAcls.acls.filter(_.principal == principal)
-      }.filter { case (_, acls) =>
-        acls.nonEmpty
+      }.filter {
+        case (_, acls) =>
+          acls.nonEmpty
       }.toMap
     }
   }
@@ -209,7 +219,7 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
     if (zkClient != null) zkClient.close()
   }
 
-  private def loadCache()  {
+  private def loadCache() {
     inWriteLock(lock) {
       val resourceTypes = zkClient.getResourceTypes()
       for (rType <- resourceTypes) {
@@ -239,15 +249,15 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
   }
 
   /**
-    * Safely updates the resources ACLs by ensuring reads and writes respect the expected zookeeper version.
-    * Continues to retry until it successfully updates zookeeper.
-    *
-    * Returns a boolean indicating if the content of the ACLs was actually changed.
-    *
-    * @param resource the resource to change ACLs for
-    * @param getNewAcls function to transform existing acls to new ACLs
-    * @return boolean indicating if a change was made
-    */
+   * Safely updates the resources ACLs by ensuring reads and writes respect the expected zookeeper version.
+   * Continues to retry until it successfully updates zookeeper.
+   *
+   * Returns a boolean indicating if the content of the ACLs was actually changed.
+   *
+   * @param resource the resource to change ACLs for
+   * @param getNewAcls function to transform existing acls to new ACLs
+   * @return boolean indicating if a change was made
+   */
   private def updateResourceAcls(resource: Resource)(getNewAcls: Set[Acl] => Set[Acl]): Boolean = {
     var currentVersionedAcls =
       if (aclCache.contains(resource))
@@ -262,7 +272,8 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
       val (updateSucceeded, updateVersion) =
         if (newAcls.nonEmpty) {
           zkClient.conditionalSetOrCreateAclsForResource(resource, newAcls, currentVersionedAcls.zkVersion)
-        } else {
+        }
+        else {
           trace(s"Deleting path for $resource because it had no ACLs remaining")
           (zkClient.conditionalDelete(resource, currentVersionedAcls.zkVersion), 0)
         }
@@ -272,13 +283,14 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
         Thread.sleep(backoffTime)
         currentVersionedAcls = getAclsFromZk(resource)
         retries += 1
-      } else {
+      }
+      else {
         newVersionedAcls = VersionedAcls(newAcls, updateVersion)
         writeComplete = updateSucceeded
       }
     }
 
-    if(!writeComplete)
+    if (!writeComplete)
       throw new IllegalStateException(s"Failed to update ACLs for $resource after trying a maximum of $maxUpdateRetries times")
 
     if (newVersionedAcls.acls != currentVersionedAcls.acls) {
@@ -286,7 +298,8 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
       updateCache(resource, newVersionedAcls)
       updateAclChangedFlag(resource)
       true
-    } else {
+    }
+    else {
       debug(s"Updated ACLs for $resource, no change was made")
       updateCache(resource, newVersionedAcls) // Even if no change, update the version
       false
@@ -304,10 +317,23 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
   private def updateCache(resource: Resource, versionedAcls: VersionedAcls) {
     if (versionedAcls.acls.nonEmpty) {
       aclCache.put(resource, versionedAcls)
-    } else {
+
+      if (isPrefix(resource)) {
+        prefixAclCache.put(prefix(resource), versionedAcls)
+      }
+    }
+    else {
       aclCache.remove(resource)
+      if (isPrefix(resource)) {
+        prefixAclCache.remove(prefix(resource))
+      }
     }
   }
+
+  private def isPrefix(resource: Resource): Boolean = resource.name.matches("^[^\\*]+\\*$")
+
+  private def prefix(resource: Resource): Resource = resource.copy(name=resource.name.replace("*", ""))
+
 
   private def updateAclChangedFlag(resource: Resource) {
     zkClient.createAclChangeNotification(resource.toString)
