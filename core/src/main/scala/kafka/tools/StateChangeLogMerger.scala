@@ -26,6 +26,7 @@ import java.text.SimpleDateFormat
 
 import kafka.utils.{CommandLineUtils, CoreUtils, Exit, Logging}
 import java.io.{BufferedOutputStream, OutputStream}
+import scala.io
 import java.nio.charset.StandardCharsets
 
 import org.apache.kafka.common.internals.Topic

@@ -591,7 +591,7 @@ project(':core') {
     scoverage libs.scoveragePlugin
     scoverage libs.scoverageRuntime
 
-    compile 'io.micrometer:micrometer-core:latest.release'
+    testCompile 'io.micrometer:micrometer-core:latest.release'
   }
   
   scoverage {

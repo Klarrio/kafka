@@ -21,6 +21,7 @@ import joptsimple.OptionParser
 import java.util.Properties
 import java.util.Random
 import java.io._
+import scala.io
 
 import kafka.consumer._
 import kafka.serializer._
