@@ -21,6 +21,7 @@ patch-process/*
 .#*
 rat.out
 TAGS
+tags
 *.iml
 .project
 .settings
@@ -48,3 +49,6 @@ tests/venv
 docs/generated/
 
 .release-settings.json
+
+.bloop
+.metals

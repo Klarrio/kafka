@@ -342,6 +342,7 @@ subprojects {
       "-Xlint:stars-align",
       "-Xlint:type-parameter-shadow",
       "-Xlint:unsound-match",
+      "-target:jvm-1.8",
     ]
 
     if (versions.baseScala != '2.11') {

@@ -585,6 +585,10 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
     // run timed test
     val startMs = System.currentTimeMillis
 
+    def supplier[T](f: () => T): java.util.function.Supplier[T] = new java.util.function.Supplier[T] {
+      def get(): T = f()
+    }
+
     Range(0,repeats).foreach { _ =>
       principals.values.flatten.foreach { p =>
         val session = Session(p, host1)
@@ -593,7 +597,7 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
 
         topics.foreach(t =>
           assertTrue(s"${p.getName} should have Read access to ${t.name} from host1",
-            timerUniqueTopics.record( ()=>simpleAclAuthorizer.authorize(session, Read, t))))
+            timerUniqueTopics.record(supplier(() => simpleAclAuthorizer.authorize(session, Read, t)))))
 
         // check shared topics
         Range(1, sharedTopicCount)
@@ -601,7 +605,7 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
           .map(new Resource(Topic, _))
           .foreach(t =>
             assertTrue(s"${p.getName} should have Read access to ${t.name} from host1",
-              timerSharedTopics.record(()=> simpleAclAuthorizer.authorize(session, Read, t))))
+              timerSharedTopics.record(supplier(() => simpleAclAuthorizer.authorize(session, Read, t)))))
       }
 
       principals.foreach { case (t, pl) =>
@@ -609,7 +613,7 @@ class SimpleAclAuthorizerTest extends ZooKeeperTestHarness {
           val session = Session(p, host1)
           val g = new Resource(Group, s"prefix.$t.${TestUtils.randomString(10)}")
           assertTrue(s"${p.getName} should have Read access to ${g.name} from host1",
-            timerPrefixTopics.record(()=> simpleAclAuthorizer.authorize(session, Read, g)))
+            timerPrefixTopics.record(supplier(() => simpleAclAuthorizer.authorize(session, Read, g))))
         }
       }
     }
